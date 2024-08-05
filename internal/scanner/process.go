@@ -20,7 +20,6 @@ import (
 
 func (s *Scanner) processBlocks(ctx context.Context) {
 	const (
-		// small delay for blocks with big batch of transactions
 		delayBase = 2 * time.Second
 		delayMax  = 8 * time.Second
 	)
@@ -118,9 +117,6 @@ func (s *Scanner) processMcBlock(ctx context.Context, master *ton.BlockIDExt) er
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				//if err := s.processTx(tx); err != nil {
-				//	tmb.Kill(err)
-				//}
 				if err := s.processTxNew(tx); err != nil {
 					tmb.Kill(err)
 				}
@@ -133,7 +129,7 @@ func (s *Scanner) processMcBlock(ctx context.Context, master *ton.BlockIDExt) er
 	if err := tmb.Wait(); err != nil {
 		logrus.Errorf("[SCN] failed to process transactions: %s", err)
 		txDB.Rollback()
-		// start with next block, otherwise process stucks
+		// start with next block, otherwise process will get stuck
 		s.lastBlock.SeqNo++
 		return err
 	}
@@ -177,7 +173,6 @@ func (s *Scanner) getTxsFromShard(ctx context.Context, shard *ton.BlockIDExt) ([
 	)
 
 	for more {
-		// problem: method can return duplicate transactions
 		txsShort, more, err = s.api.GetBlockTransactionsV2(
 			ctx,
 			shard,

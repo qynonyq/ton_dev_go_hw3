@@ -20,17 +20,9 @@ type Scanner struct {
 
 func NewScanner(ctx context.Context, cfg *liteclient.GlobalConfig) (*Scanner, error) {
 	client := liteclient.NewConnectionPool()
-
-	//if err := client.AddConnectionsFromConfigUrl(ctx, app.TestnetCfgURL); err != nil {
-	//	return nil, err
-	//}
 	if err := client.AddConnectionsFromConfigUrl(ctx, app.MainnetCfgURL); err != nil {
 		return nil, err
 	}
-	//if err := client.AddConnectionsFromConfig(ctx, cfg); err != nil {
-	//	return nil, err
-	//}
-
 	api := ton.NewAPIClient(client)
 
 	return &Scanner{
