@@ -15,5 +15,6 @@ type (
 		FwdPayload *cell.Cell       `tlb:"either . ^"`
 	}
 
-	Comment struct{}
+	Comment struct {
+	}
 )

@@ -22,6 +22,7 @@ func (s *Scanner) processBlocks(ctx context.Context) {
 	const (
 		delayBase = 2 * time.Second
 		delayMax  = 8 * time.Second
+		maxRetry  = 5
 	)
 	delay := delayBase
 
@@ -49,14 +50,16 @@ func (s *Scanner) processBlocks(ctx context.Context) {
 			continue
 		}
 
-		scanErr := s.processMcBlock(ctx, master)
+		err = s.processMcBlock(ctx, master)
 		if err == nil {
 			delay = delayBase
 		}
-		if scanErr != nil {
-			if !strings.Contains(scanErr.Error(), "is not in db") {
+		retries := 0
+		if err != nil {
+			if !strings.Contains(err.Error(), "is not in db") {
 				logrus.Errorf("[SCN] failed to process MC block [seqno=%d] [shard=%d]: %s",
-					master.SeqNo, master.Shard, scanErr)
+					master.SeqNo, master.Shard, err)
+				retries++
 				continue
 			}
 
@@ -65,6 +68,7 @@ func (s *Scanner) processBlocks(ctx context.Context) {
 			if delay > delayMax {
 				delay = delayMax
 			}
+
 		}
 	}
 }
@@ -117,7 +121,7 @@ func (s *Scanner) processMcBlock(ctx context.Context, master *ton.BlockIDExt) er
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				if err := s.processTxNew(tx); err != nil {
+				if err := s.processTx(tx); err != nil {
 					tmb.Kill(err)
 				}
 			}()
@@ -220,7 +224,7 @@ func (s *Scanner) getTxsFromShard(ctx context.Context, shard *ton.BlockIDExt) ([
 	return txs, nil
 }
 
-func (s *Scanner) processTxNew(tx *tlb.Transaction) error {
+func (s *Scanner) processTx(tx *tlb.Transaction) error {
 	if tx.IO.In.MsgType != tlb.MsgTypeInternal {
 		return nil
 	}
@@ -230,16 +234,33 @@ func (s *Scanner) processTxNew(tx *tlb.Transaction) error {
 		return nil
 	}
 
-	var transferNotification structures.TransferNotification
-	if err := tlb.LoadFromCell(&transferNotification, msgIn.Body.BeginParse()); err != nil {
+	var tn structures.TransferNotification
+	if err := tlb.LoadFromCell(&tn, msgIn.Body.BeginParse()); err != nil {
 		// invalid transaction, magic is not correct (opcode)
 		return nil
 	}
+	if tn.FwdPayload == nil {
+		return nil
+	}
 
-	logrus.Infof("[JTN] transfer notification")
-	logrus.Infof("[JTN] from: %s", transferNotification.Sender)
-	logrus.Infof("[JTN] to: %s", msgIn.DstAddr)
-	logrus.Infof("[JTN] amount: %s", transferNotification.Amount)
+	// parse forward payload
+	fwdPayload := tn.FwdPayload.BeginParse()
+	op, err := fwdPayload.LoadUInt(32)
+	if err != nil {
+		// no opcode
+		logrus.Debugf("[SCN] failed to load fwd payload op: %s", err)
+		return nil
+	}
+	if op != 0 {
+		logrus.Debugf("[SCN] invalid fwd payload op: %d", op)
+		return nil
+	}
+	comment, err := fwdPayload.LoadStringSnake()
+	if err != nil {
+		return fmt.Errorf("[JTN] failed to parse forward payload comment: %s", err)
+	}
+
+	logrus.Infof("[JTN] %s from %s to %s, comment: %s", tn.Amount, tn.Sender, msgIn.DstAddr, comment)
 
 	return nil
 }

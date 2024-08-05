@@ -20,7 +20,7 @@ type Scanner struct {
 
 func NewScanner(ctx context.Context, cfg *liteclient.GlobalConfig) (*Scanner, error) {
 	client := liteclient.NewConnectionPool()
-	if err := client.AddConnectionsFromConfigUrl(ctx, app.MainnetCfgURL); err != nil {
+	if err := client.AddConnectionsFromConfigUrl(ctx, app.TestnetCfgURL); err != nil {
 		return nil, err
 	}
 	api := ton.NewAPIClient(client)
@@ -37,6 +37,19 @@ func (s *Scanner) Stop() {
 	s.Client.Stop()
 }
 
+func (s *Scanner) updateLastBlock(ctx context.Context) {
+	lastMaster, err := s.api.GetMasterchainInfo(ctx)
+	for err != nil {
+		time.Sleep(time.Second)
+		logrus.Errorf("[SCN] error when get last master: %s", err)
+		lastMaster, err = s.api.GetMasterchainInfo(ctx)
+	}
+
+	s.lastBlock.SeqNo = lastMaster.SeqNo
+	s.lastBlock.Shard = lastMaster.Shard
+	s.lastBlock.Workchain = lastMaster.Workchain
+}
+
 func (s *Scanner) Listen(ctx context.Context) {
 	logrus.Info("[SCN] start scanning blocks")
 
@@ -47,16 +60,7 @@ func (s *Scanner) Listen(ctx context.Context) {
 	}
 	if err != nil {
 		// get last block from MC
-		lastMaster, err := s.api.GetMasterchainInfo(ctx)
-		for err != nil {
-			time.Sleep(time.Second)
-			logrus.Error("[SCN] error when get last master: ", err)
-			lastMaster, err = s.api.GetMasterchainInfo(ctx)
-		}
-
-		s.lastBlock.SeqNo = lastMaster.SeqNo
-		s.lastBlock.Shard = lastMaster.Shard
-		s.lastBlock.Workchain = lastMaster.Workchain
+		s.updateLastBlock(ctx)
 	}
 
 	master, err := s.api.LookupBlock(
@@ -65,9 +69,16 @@ func (s *Scanner) Listen(ctx context.Context) {
 		s.lastBlock.Shard,
 		s.lastBlock.SeqNo,
 	)
+	retries := 0
 	for err != nil {
-		logrus.Error("[SCN] failed to lookup master block: ", err)
-		time.Sleep(time.Second)
+		logrus.Error("[SCN] failed to lookup master block %d: ", s.lastBlock.SeqNo, err)
+		retries++
+		time.Sleep(2 * time.Second)
+		// find last block from mc after some tries
+		// (needed after switching nets)
+		if retries >= 5 {
+			s.updateLastBlock(ctx)
+		}
 		master, err = s.api.LookupBlock(
 			ctx,
 			s.lastBlock.Workchain,
