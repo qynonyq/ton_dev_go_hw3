@@ -7,14 +7,11 @@ import (
 )
 
 type (
-	TransferNotification struct {
+	JettonNotify struct {
 		_          tlb.Magic        `tlb:"#7362d09c"`
 		QueryID    uint64           `tlb:"## 64"`
 		Amount     tlb.Coins        `tlb:"."`
 		Sender     *address.Address `tlb:"addr"`
 		FwdPayload *cell.Cell       `tlb:"either . ^"`
-	}
-
-	Comment struct {
 	}
 )

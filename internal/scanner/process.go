@@ -234,25 +234,22 @@ func (s *Scanner) processTx(tx *tlb.Transaction) error {
 		return nil
 	}
 
-	var tn structures.TransferNotification
-	if err := tlb.LoadFromCell(&tn, msgIn.Body.BeginParse()); err != nil {
+	var jn structures.JettonNotify
+	if err := tlb.LoadFromCell(&jn, msgIn.Body.BeginParse()); err != nil {
 		// invalid transaction, magic is not correct (opcode)
 		return nil
 	}
-	if tn.FwdPayload == nil {
+	if jn.FwdPayload == nil {
 		return nil
 	}
 
-	// parse forward payload
-	fwdPayload := tn.FwdPayload.BeginParse()
+	fwdPayload := jn.FwdPayload.BeginParse()
 	op, err := fwdPayload.LoadUInt(32)
 	if err != nil {
-		// no opcode
-		logrus.Debugf("[SCN] failed to load fwd payload op: %s", err)
 		return nil
 	}
 	if op != 0 {
-		logrus.Debugf("[SCN] invalid fwd payload op: %d", op)
+		logrus.Debugf("[SCN] invalid opcode: %x", op)
 		return nil
 	}
 	comment, err := fwdPayload.LoadStringSnake()
@@ -260,7 +257,7 @@ func (s *Scanner) processTx(tx *tlb.Transaction) error {
 		return fmt.Errorf("[JTN] failed to parse forward payload comment: %s", err)
 	}
 
-	logrus.Infof("[JTN] %s from %s to %s, comment: %s", tn.Amount, tn.Sender, msgIn.DstAddr, comment)
+	logrus.Infof("[JTN] %s from %s to %s, comment: %+v", jn.Amount, jn.Sender, msgIn.DstAddr, comment)
 
 	return nil
 }
